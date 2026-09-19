@@ -1,4 +1,4 @@
-name: Angulismo APK diagnostic
+name: Build Angulismo TV audio fix
 
 on:
   push:
@@ -7,62 +7,164 @@ on:
   workflow_dispatch:
 
 jobs:
-  inspect:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve and fetch Angulismo APK
+      - name: Install utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip zip
+
+      - name: Download current Angulismo APK
         shell: bash
         run: |
           set -euxo pipefail
           curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4' -o version.json
-          EPHEMERAL_URL="$(jq -r '.apkUrl // empty' version.json)"
-          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | awk -F/ '{print $(NF-1)}')"
-          PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
-          curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
-          APK_URL="$(grep -m1 'id="downloadButton"' mediafire.html | cut -d'"' -f2 || true)"
-          if [ -z "$APK_URL" ]; then
-            echo '=== MediaFire downloadButton diagnostics ==='
-            grep -i -n -E 'downloadButton|download[^<]{0,80}button|download_link|downloadUrl' mediafire.html | head -80 || true
-            exit 2
-          fi
-          APK_URL="$(printf '%s' "$APK_URL" | sed 's/&amp;/\\&/g')"
-          echo "Resolved download URL"
-          curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
-          ls -lh app.apk
-          file app.apk
-          unzip -t app.apk >/dev/null
-          sha256sum app.apk
+          APK_URL="$(jq -r '.apkUrl // empty' version.json)"
+          test -n "$APK_URL"
+          curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o original.apk
+          unzip -t original.apk >/dev/null
+          ls -lh original.apk
 
-      - name: Install APK tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y apktool jq unzip
-
-      - name: Decompile
-        run: |
-          apktool d -f app.apk -o decompiled
-
-      - name: Inspect UnifiedPlayerActivity
+      - name: Download ExoPlayer FFmpeg extension
         shell: bash
         run: |
           set -euxo pipefail
-          FILE="$(find decompiled -type f -path '*com/angulismotv/UnifiedPlayerActivity.smali' | head -1)"
-          test -n "$FILE"
-          cp "$FILE" UnifiedPlayerActivity.smali
-          grep -n -E 'showExoPlayer|DefaultRenderersFactory|setEnableDecoderFallback|setExtensionRendererMode|ExoPlayer\\$Builder|HlsMediaSource' "$FILE" || true
-          echo '=== showExoPlayer method ==='
-          awk '/^\\.method.*showExoPlayer/{p=1} p{print} p && /^\\.end method/{exit}' "$FILE"
+          curl --retry 3 --retry-all-errors -fL             'https://repo.maven.apache.org/maven2/org/jellyfin/exoplayer/exoplayer-ffmpeg-extension/2.19.1+1/exoplayer-ffmpeg-extension-2.19.1+1.aar'             -o ffmpeg.aar
+          curl --retry 3 --retry-all-errors -fL             'https://dl.google.com/dl/android/maven2/com/google/android/exoplayer/exoplayer-core/2.19.1/exoplayer-core-2.19.1.aar'             -o exoplayer-core.aar
+          curl --retry 3 --retry-all-errors -fL             'https://dl.google.com/dl/android/maven2/com/google/android/exoplayer/exoplayer-decoder/2.19.1/exoplayer-decoder-2.19.1.aar'             -o exoplayer-decoder.aar
+          mkdir -p ffmpeg core decoder
+          unzip -q ffmpeg.aar -d ffmpeg
+          unzip -q exoplayer-core.aar -d core
+          unzip -q exoplayer-decoder.aar -d decoder
+          test -f ffmpeg/classes.jar
+          find ffmpeg -maxdepth 4 -type f | sort
+          find ffmpeg -type f -name '*.so' -print | grep -q .
 
-      - name: Upload diagnostic
-        if: always()
+      - name: Compile FFmpeg renderer to secondary DEX
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          ANDROID_JAR="$(find "$ANDROID_HOME/platforms" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)/android.jar"
+          echo "BUILD_TOOLS=$BUILD_TOOLS"
+          test -x "$BUILD_TOOLS/d8"
+          test -f "$ANDROID_JAR"
+          mkdir -p ffmpeg-dex
+          "$BUILD_TOOLS/d8" ffmpeg/classes.jar             --lib "$ANDROID_JAR"             --classpath core/classes.jar             --classpath decoder/classes.jar             --min-api 21             --output ffmpeg-dex
+          test -f ffmpeg-dex/classes.dex
+          mv ffmpeg-dex/classes.dex classes5.dex
+          ls -lh classes5.dex
+
+      - name: Patch ExoPlayer renderer policy
+        shell: bash
+        run: |
+          set -euxo pipefail
+          unzip -p original.apk classes.dex > classes.dex
+          python3 - <<'PY'
+          import hashlib, struct, zlib
+
+          p='classes.dex'
+          dex=bytearray(open(p,'rb').read())
+
+          def words(*xs):
+              return b''.join(struct.pack('<H', x) for x in xs)
+
+          patches=[
+              # DefaultRenderersFactory(): extensionRendererMode 0 -> 2 (PREFER)
+              (words(0x0312,0x2359,0x709b), words(0x2312,0x2359,0x709b), 'prefer extension renderer'),
+              # createRenderers(): force enableDecoderFallback=true for video path
+              (words(0xa455,0x7098), words(0x1412,0x0000), 'decoder fallback video'),
+              # createRenderers(): force enableDecoderFallback=true for audio path
+              (words(0x0455,0x7098), words(0x1412,0x0000), 'decoder fallback audio'),
+          ]
+
+          for old,new,label in patches:
+              count=dex.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one patch site, got {count}')
+              off=dex.find(old)
+              dex[off:off+len(old)]=new
+              print(label, hex(off))
+
+          # Recompute DEX signature and checksum.
+          dex[12:32]=hashlib.sha1(dex[32:]).digest()
+          struct.pack_into('<I', dex, 8, zlib.adler32(dex[12:]) & 0xffffffff)
+          open(p,'wb').write(dex)
+
+          # Re-verify exact patched sequences.
+          assert dex.count(words(0x2312,0x2359,0x709b)) == 1
+          assert dex.count(words(0x1412,0x0000)) >= 2
+          print('patched classes.dex sha256', hashlib.sha256(dex).hexdigest())
+          PY
+
+      - name: Repack APK with FFmpeg
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cp original.apk patched-unsigned.apk
+
+          # Remove old signature metadata; the APK will be re-signed below.
+          zip -d patched-unsigned.apk 'META-INF/*.RSA' 'META-INF/*.DSA' 'META-INF/*.EC' 'META-INF/*.SF' 'META-INF/MANIFEST.MF' >/dev/null 2>&1 || true
+
+          mkdir -p inject/lib
+          cp classes.dex inject/classes.dex
+          cp classes5.dex inject/classes5.dex
+
+          # AAR native libraries are under jni/<abi>/*.so.
+          for abi_dir in ffmpeg/jni/*; do
+            [ -d "$abi_dir" ] || continue
+            abi="$(basename "$abi_dir")"
+            mkdir -p "inject/lib/$abi"
+            cp "$abi_dir"/*.so "inject/lib/$abi/"
+          done
+
+          test -f inject/classes5.dex
+          find inject/lib -type f -name '*.so' -print | grep -q .
+
+          (
+            cd inject
+            zip -q -0 -r ../patched-unsigned.apk classes.dex classes5.dex lib
+          )
+
+          unzip -t patched-unsigned.apk >/dev/null
+          unzip -l patched-unsigned.apk | grep -E 'classes5.dex|lib/.+\.so'
+
+      - name: Align and sign APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
+
+          "$BUILD_TOOLS/zipalign" -f -p 4 patched-unsigned.apk aligned.apk
+
+          keytool -genkeypair -noprompt             -keystore angulismo-audiofix.keystore             -storepass angulismo123             -keypass angulismo123             -alias audiofix             -keyalg RSA -keysize 2048 -validity 3650             -dname 'CN=Angulismo TV Audio Fix, O=Local Build, C=AR'
+
+          "$BUILD_TOOLS/apksigner" sign             --ks angulismo-audiofix.keystore             --ks-key-alias audiofix             --ks-pass pass:angulismo123             --key-pass pass:angulismo123             --out AngulismoTV-TV-FFmpeg-AudioFix.apk             aligned.apk
+
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs AngulismoTV-TV-FFmpeg-AudioFix.apk | tee verify.txt
+          unzip -t AngulismoTV-TV-FFmpeg-AudioFix.apk >/dev/null
+          sha256sum AngulismoTV-TV-FFmpeg-AudioFix.apk | tee sha256.txt
+
+      - name: Verify embedded FFmpeg renderer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          unzip -l AngulismoTV-TV-FFmpeg-AudioFix.apk | grep 'classes5.dex'
+          unzip -l AngulismoTV-TV-FFmpeg-AudioFix.apk | grep -E 'lib/(arm64-v8a|armeabi-v7a)/.+\.so'
+          strings classes5.dex | grep -q 'FfmpegAudioRenderer'
+          echo 'FFmpeg audio renderer embedded successfully.'
+
+      - name: Upload fixed APK
         uses: actions/upload-artifact@v4
         with:
-          name: angulismo-diagnostic
+          name: AngulismoTV-TV-FFmpeg-AudioFix
           path: |
-            version.json
-            mediafire.html
-            app.apk
-            UnifiedPlayerActivity.smali
-          if-no-files-found: ignore
+            AngulismoTV-TV-FFmpeg-AudioFix.apk
+            verify.txt
+            sha256.txt
+          if-no-files-found: error
