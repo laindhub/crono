@@ -2,7 +2,8 @@ name: Angulismo APK diagnostic
 
 on:
   push:
-    branches: [angulismo-audio-fix]
+    branches:
+      - angulismo-audio-fix
   workflow_dispatch:
 
 jobs:
@@ -20,19 +21,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          RESP="$(curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4')"
-          echo "$RESP" | tee version.json
-          APK_URL="$(python3 - <<'PY'
-import json
-d=json.load(open('version.json'))
-for k in ('apkUrl','apk_url','downloadUrl','download_url','url'):
-    v=d.get(k)
-    if isinstance(v,str) and v.startswith('http'):
-        print(v); break
-else:
-    raise SystemExit('No APK URL in version response')
-PY
-)"
+          curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4' -o version.json
+          cat version.json
+          APK_URL="$(jq -r '.apkUrl // .apk_url // .downloadUrl // .download_url // .url // empty' version.json)"
+          test -n "$APK_URL"
           echo "APK_URL=$APK_URL"
           curl -fL "$APK_URL" -o app.apk
           ls -lh app.apk
@@ -46,20 +38,13 @@ PY
         run: |
           set -euxo pipefail
           FILE="$(find decompiled -type f -path '*com/angulismotv/UnifiedPlayerActivity.smali' | head -1)"
+          test -n "$FILE"
           echo "SMALI=$FILE"
           cp "$FILE" UnifiedPlayerActivity.smali
+          echo '=== relevant references ==='
           grep -n -E 'showExoPlayer|DefaultRenderersFactory|setEnableDecoderFallback|setExtensionRendererMode|ExoPlayer\$Builder|HlsMediaSource' "$FILE" || true
-          python3 - <<'PY'
-from pathlib import Path
-p=Path('UnifiedPlayerActivity.smali')
-lines=p.read_text(errors='replace').splitlines()
-need=('showExoPlayer','DefaultRenderersFactory','setEnableDecoderFallback','setExtensionRendererMode','ExoPlayer$Builder','HlsMediaSource')
-idx=[i for i,l in enumerate(lines) if any(x in l for x in need)]
-for i in idx:
-    a=max(0,i-25); b=min(len(lines),i+80)
-    print(f'\n--- lines {a+1}-{b} ---')
-    print('\n'.join(lines[a:b]))
-PY
+          echo '=== showExoPlayer method ==='
+          awk '/^\.method.*showExoPlayer/{p=1} p{print} p && /^\.end method/{exit}' "$FILE"
 
       - name: Upload diagnostic
         uses: actions/upload-artifact@v4
