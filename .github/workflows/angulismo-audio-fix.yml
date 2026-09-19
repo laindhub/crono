@@ -22,10 +22,17 @@ jobs:
         run: |
           set -euxo pipefail
           curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4' -o version.json
-          APK_URL="$(jq -r '.apkUrl // empty' version.json)"
+          EPHEMERAL_URL="$(jq -r '.apkUrl // empty' version.json)"
+          test -n "$EPHEMERAL_URL"
+          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | awk -F/ '{print $(NF-1)}')"
+          PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
+          curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
+          APK_URL="$(grep -m1 'id="downloadButton"' mediafire.html | cut -d'"' -f2 || true)"
           test -n "$APK_URL"
+          APK_URL="$(printf '%s' "$APK_URL" | sed 's/&amp;/\\&/g')"
           curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o original.apk
           unzip -t original.apk >/dev/null
+          sha256sum original.apk
           ls -lh original.apk
 
       - name: Download ExoPlayer FFmpeg extension
