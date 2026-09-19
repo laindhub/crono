@@ -28,7 +28,7 @@ jobs:
           cat version.json
           EPHEMERAL_URL="$(jq -r '.apkUrl // empty' version.json)"
           test -n "$EPHEMERAL_URL"
-          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | sed -E 's#^.*/([^/]+)/[^/]+$#\\1#')"
+          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | awk -F/ '{print $(NF-1)}')"
           PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
           echo "MEDIAFIRE_PAGE=$PAGE_URL"
           curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
