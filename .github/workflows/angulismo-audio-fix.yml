@@ -21,7 +21,7 @@ jobs:
           FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | awk -F/ '{print $(NF-1)}')"
           PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
           curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
-          APK_URL="$(grep -oP 'href="\\Khttps?://download[0-9]+\\.mediafire\\.com/[^"]+' mediafire.html | head -1 || true)"
+          APK_URL="$(grep -m1 'id="downloadButton"' mediafire.html | cut -d'"' -f2 || true)"
           if [ -z "$APK_URL" ]; then
             echo '=== MediaFire downloadButton diagnostics ==='
             grep -i -n -E 'downloadButton|download[^<]{0,80}button|download_link|downloadUrl' mediafire.html | head -80 || true
