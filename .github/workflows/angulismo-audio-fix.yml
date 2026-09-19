@@ -33,25 +33,6 @@ jobs:
           curl -fsSL -A 'Mozilla/5.0' "$API_URL" -o mediafire-links.json
           cat mediafire-links.json
           APK_URL="$(jq -r '.response.links[0].direct_download // empty' mediafire-links.json)"
-          if [ -z "$APK_URL" ]; then
-            PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
-            curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
-            python3 - <<'PY'
-import re
-s=open('mediafire.html',errors='ignore').read()
-for pat in [
-    r'https:\\/\\/download[^"\'<> ]+',
-    r'https://download[^"\'<> ]+',
-    r'https:\\/\\/[^"\']*mediafire[^"\']+',
-]:
-    m=re.search(pat,s,re.I)
-    if m:
-        u=m.group(0).replace('\\/','/').replace('&amp;','&')
-        open('resolved-url.txt','w').write(u)
-        break
-PY
-            APK_URL="$(cat resolved-url.txt 2>/dev/null || true)"
-          fi
           test -n "$APK_URL"
           echo "Resolved MediaFire download URL"
           curl -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
