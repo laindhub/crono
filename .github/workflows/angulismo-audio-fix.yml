@@ -47,6 +47,7 @@ jobs:
           p=Path("decompiled/smali/com/angulismotv/UnifiedPlayerActivity.smali")
           s=p.read_text()
           old='''    .line 1512
+              :goto_3
               new-instance v2, Lcom/google/android/exoplayer2/ExoPlayer$Builder;
 
               move-object v3, v1
@@ -56,39 +57,44 @@ jobs:
               invoke-direct {v2, v3}, Lcom/google/android/exoplayer2/ExoPlayer$Builder;-><init>(Landroid/content/Context;)V
           '''
           new='''    .line 1512
-              # Audio compatibility fix for Android TV:
-              # prefer bundled FFmpeg audio renderer and retain MediaCodec fallback.
-              new-instance v2, Lcom/google/android/exoplayer2/DefaultRenderersFactory;
+              :goto_3
+              # Android TV audio compatibility: allow decoder fallback and
+              # prefer the bundled FFmpeg audio extension when MediaCodec
+              # cannot decode a stream correctly.
+              new-instance v15, Lcom/google/android/exoplayer2/DefaultRenderersFactory;
 
               move-object v3, v1
 
               check-cast v3, Landroid/content/Context;
 
-              invoke-direct {v2, v3}, Lcom/google/android/exoplayer2/DefaultRenderersFactory;-><init>(Landroid/content/Context;)V
+              invoke-direct {v15, v3}, Lcom/google/android/exoplayer2/DefaultRenderersFactory;-><init>(Landroid/content/Context;)V
 
-              invoke-virtual {v2, v10}, Lcom/google/android/exoplayer2/DefaultRenderersFactory;->setEnableDecoderFallback(Z)Lcom/google/android/exoplayer2/DefaultRenderersFactory;
+              invoke-virtual {v15, v10}, Lcom/google/android/exoplayer2/DefaultRenderersFactory;->setEnableDecoderFallback(Z)Lcom/google/android/exoplayer2/DefaultRenderersFactory;
 
-              move-result-object v2
+              move-result-object v15
 
-              const/4 v14, 0x2
+              const/4 v2, 0x2
 
-              invoke-virtual {v2, v14}, Lcom/google/android/exoplayer2/DefaultRenderersFactory;->setExtensionRendererMode(I)Lcom/google/android/exoplayer2/DefaultRenderersFactory;
+              invoke-virtual {v15, v2}, Lcom/google/android/exoplayer2/DefaultRenderersFactory;->setExtensionRendererMode(I)Lcom/google/android/exoplayer2/DefaultRenderersFactory;
 
-              move-result-object v2
+              move-result-object v15
 
-              new-instance v14, Lcom/google/android/exoplayer2/ExoPlayer$Builder;
+              new-instance v2, Lcom/google/android/exoplayer2/ExoPlayer$Builder;
 
-              invoke-direct {v14, v3, v2}, Lcom/google/android/exoplayer2/ExoPlayer$Builder;-><init>(Landroid/content/Context;Lcom/google/android/exoplayer2/RenderersFactory;)V
-
-              move-object v2, v14
+              invoke-direct {v2, v3, v15}, Lcom/google/android/exoplayer2/ExoPlayer$Builder;-><init>(Landroid/content/Context;Lcom/google/android/exoplayer2/RenderersFactory;)V
           '''
           if old not in s:
-              raise SystemExit("Expected ExoPlayer builder block not found; refusing unsafe patch")
+              a=s.index("    .line 1512")
+              print(s[a:a+700])
+              raise SystemExit("Exact ExoPlayer constructor block not found; refusing unsafe patch")
           s=s.replace(old,new,1)
           p.write_text(s)
           PY
-          grep -n -A35 -B4 'Audio compatibility fix' "$FILE"
-          # Keep this local build ahead of the official beta so its updater does not try to downgrade it.
+          grep -n -A40 -B4 'Android TV audio compatibility' "$FILE"
+          grep -q 'setEnableDecoderFallback' "$FILE"
+          grep -q 'setExtensionRendererMode' "$FILE"
+          grep -q '<init>(Landroid/content/Context;Lcom/google/android/exoplayer2/RenderersFactory;)V' "$FILE"
+          # Keep this local build ahead of the official beta so its updater does not try to replace it.
           sed -i -E "s/versionCode: '[0-9]+'/versionCode: '104'/" decompiled/apktool.yml
           sed -i -E "s/versionName: .*/versionName: 1.3-audiofix/" decompiled/apktool.yml
           grep -A4 -B2 versionInfo decompiled/apktool.yml || true
