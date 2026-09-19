@@ -5,9 +5,6 @@ on:
     branches:
       - angulismo-audio-fix
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main
 
 jobs:
   inspect:
@@ -26,19 +23,13 @@ jobs:
           set -euxo pipefail
           curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4' -o version.json
           cat version.json
-          EPHEMERAL_URL="$(jq -r '.apkUrl // empty' version.json)"
-          test -n "$EPHEMERAL_URL"
-          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | awk -F/ '{print $(NF-1)}')"
-          API_URL="https://www.mediafire.com/api/1.5/file/get_links.php?quick_key=$FILE_KEY&link_type=direct_download&response_format=json"
-          curl -fsSL -A 'Mozilla/5.0' "$API_URL" -o mediafire-links.json
-          cat mediafire-links.json
-          APK_URL="$(jq -r '.response.links[0].direct_download // empty' mediafire-links.json)"
+          APK_URL="$(jq -r '.apkUrl // empty' version.json)"
           test -n "$APK_URL"
-          echo "Resolved MediaFire download URL"
-          curl -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
+          curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
           ls -lh app.apk
           file app.apk
           unzip -t app.apk >/dev/null
+
       - name: Decompile
         run: |
           apktool d -f app.apk -o decompiled
