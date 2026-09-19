@@ -54,4 +54,38 @@ jobs:
           path: |
             version.json
             app.apk
+            UnifiedPlayerActivity.smali          PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
+          curl -fsSL -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36' "$PAGE_URL" -o mediafire.html
+          APK_URL="$(perl -0777 -ne 'if (/<a\\b(?=[^>]*\\bid=["'"'"']downloadButton["'"'"'])(?=[^>]*\\bhref=["'"'"']([^"'"'"']+)["'"'"'])[^>]*>/si) { print $1 } elsif (/<a\\b(?=[^>]*\\bhref=["'"'"']([^"'"'"']+)["'"'"'])(?=[^>]*\\bid=["'"'"']downloadButton["'"'"'])[^>]*>/si) { print $1 }' mediafire.html)"
+          APK_URL="$(printf '%s' "$APK_URL" | sed 's/&amp;/\\&/g')"
+          test -n "$APK_URL"
+          curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
+          ls -lh app.apk
+          file app.apk
+          unzip -t app.apk >/dev/null
+
+      - name: Decompile
+        run: |
+          apktool d -f app.apk -o decompiled
+
+      - name: Inspect UnifiedPlayerActivity
+        shell: bash
+        run: |
+          set -euxo pipefail
+          FILE="$(find decompiled -type f -path '*com/angulismotv/UnifiedPlayerActivity.smali' | head -1)"
+          test -n "$FILE"
+          echo "SMALI=$FILE"
+          cp "$FILE" UnifiedPlayerActivity.smali
+          echo '=== relevant references ==='
+          grep -n -E 'showExoPlayer|DefaultRenderersFactory|setEnableDecoderFallback|setExtensionRendererMode|ExoPlayer\$Builder|HlsMediaSource' "$FILE" || true
+          echo '=== showExoPlayer method ==='
+          awk '/^\.method.*showExoPlayer/{p=1} p{print} p && /^\.end method/{exit}' "$FILE"
+
+      - name: Upload diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: angulismo-diagnostic
+          path: |
+            version.json
+            app.apk
             UnifiedPlayerActivity.smali
