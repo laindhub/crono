@@ -5,6 +5,9 @@ on:
     branches:
       - angulismo-audio-fix
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 jobs:
   inspect:
