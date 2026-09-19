@@ -26,11 +26,19 @@ jobs:
           set -euxo pipefail
           curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4' -o version.json
           cat version.json
-          APK_URL="$(jq -r '.apkUrl // .apk_url // .downloadUrl // .download_url // .url // empty' version.json)"
+          EPHEMERAL_URL="$(jq -r '.apkUrl // empty' version.json)"
+          test -n "$EPHEMERAL_URL"
+          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | sed -E 's#^.*/([^/]+)/[^/]+$#\\1#')"
+          PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
+          echo "MEDIAFIRE_PAGE=$PAGE_URL"
+          curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
+          APK_URL="$(grep -oP 'href="\\Khttps://download[^"]+' mediafire.html | head -1 | sed 's/&amp;/\\&/g')"
           test -n "$APK_URL"
-          echo "APK_URL=$APK_URL"
-          curl -fL "$APK_URL" -o app.apk
+          echo "Resolved fresh MediaFire download URL"
+          curl -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
           ls -lh app.apk
+          file app.apk
+          unzip -t app.apk >/dev/null
 
       - name: Decompile
         run: |
