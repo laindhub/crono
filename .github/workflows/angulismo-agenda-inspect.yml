@@ -58,7 +58,7 @@ jobs:
           test -n "$AGENDA"
           cp "$AGENDA" AgendaFragment.smali
           cp decompiled/res/layout/fragment_agenda.xml fragment_agenda.xml
-          find decompiled/smali/com/angulismotv/fragments -maxdepth 1 -type f -name "AgendaFragment*setupWebView*.smali" -exec cp {} . \\;
+          find decompiled/smali/com/angulismotv/fragments -maxdepth 1 -type f -name "AgendaFragment*setupWebView*.smali" -print0 | xargs -0 -r -I{} cp "{}" .
 
           grep -RniE 'agenda|pages\.dev|fetch\(|axios|eventos|events|json|api' agenda.html web-assets > agenda-web-grep.txt || true
           grep -niE 'WebView|loadUrl|evaluateJavascript|pages\.dev|agenda|setWebViewClient|onPageFinished|setOnKeyListener' AgendaFragment.smali > agenda-smali-grep.txt || true
