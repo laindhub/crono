@@ -26,6 +26,7 @@ jobs:
           curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
 
           curl -fsSL -A 'Mozilla/5.0' 'https://angulismotv.pages.dev/agenda' -o agenda.html
+          curl -fsSL -A 'Mozilla/5.0' 'https://angulismotv.pages.dev/app/agenda' -o app-agenda.html
           grep -oE '<script[^>]+src="[^"]+"' agenda.html | sed -E 's/.*src="([^"]+)".*/\1/' > script-urls.txt || true
           cat script-urls.txt
 
@@ -57,12 +58,15 @@ jobs:
           test -n "$AGENDA"
           cp "$AGENDA" AgendaFragment.smali
           cp decompiled/res/layout/fragment_agenda.xml fragment_agenda.xml
+          for f in decompiled/smali/com/angulismotv/fragments/AgendaFragment\\$setupWebView\\$*.smali; do [ -f "$f" ] && cp "$f" .; done
 
           grep -RniE 'agenda|pages\.dev|fetch\(|axios|eventos|events|json|api' agenda.html web-assets > agenda-web-grep.txt || true
           grep -niE 'WebView|loadUrl|evaluateJavascript|pages\.dev|agenda|setWebViewClient|onPageFinished|setOnKeyListener' AgendaFragment.smali > agenda-smali-grep.txt || true
 
           echo "===== AGENDA HTML HEAD =====" > agenda-report.txt
           sed -n '1,260p' agenda.html >> agenda-report.txt
+          echo "===== APP AGENDA HTML =====" >> agenda-report.txt
+          cat app-agenda.html >> agenda-report.txt
           echo "===== SCRIPT URLS =====" >> agenda-report.txt
           cat script-urls.txt >> agenda-report.txt
           echo "===== WEB GREP =====" >> agenda-report.txt
@@ -81,7 +85,9 @@ jobs:
           path: |
             agenda-report.txt
             agenda.html
+            app-agenda.html
             web-assets/
+            AgendaFragment\$setupWebView\$*.smali
             AgendaFragment.smali
             fragment_agenda.xml
           if-no-files-found: error
