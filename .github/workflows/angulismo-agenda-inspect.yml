@@ -1,0 +1,87 @@
+name: Inspect Angulismo Agenda
+
+on:
+  push:
+    branches:
+      - angulismo-audio-fix
+  workflow_dispatch:
+
+jobs:
+  inspect-agenda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Angulismo APK and agenda website
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          curl -fsSL 'https://update.angulismotv.workers.dev/version?versionCode=4' -o version.json
+          EPHEMERAL_URL="$(jq -r '.apkUrl // empty' version.json)"
+          FILE_KEY="$(printf '%s' "$EPHEMERAL_URL" | awk -F/ '{print $(NF-1)}')"
+          PAGE_URL="https://www.mediafire.com/file/$FILE_KEY/AngulismoTV_-_BETA.apk/file"
+          curl -fsSL -A 'Mozilla/5.0' "$PAGE_URL" -o mediafire.html
+          APK_URL="$(grep -m1 'id="downloadButton"' mediafire.html | cut -d'"' -f2 | sed 's/&amp;/\&/g')"
+          curl --retry 3 --retry-all-errors -fL -A 'Mozilla/5.0' "$APK_URL" -o app.apk
+
+          curl -fsSL -A 'Mozilla/5.0' 'https://angulismotv.pages.dev/agenda' -o agenda.html
+          grep -oE '<script[^>]+src="[^"]+"' agenda.html | sed -E 's/.*src="([^"]+)".*/\1/' > script-urls.txt || true
+          cat script-urls.txt
+
+          mkdir -p web-assets
+          while IFS= read -r src; do
+            [ -z "$src" ] && continue
+            case "$src" in
+              http*) url="$src" ;;
+              /*) url="https://angulismotv.pages.dev$src" ;;
+              *) url="https://angulismotv.pages.dev/$src" ;;
+            esac
+            clean="$(printf '%s' "$src" | cut -d'?' -f1)"
+            name="$(basename "$clean")"
+            curl -fsSL -A 'Mozilla/5.0' "$url" -o "web-assets/$name" || true
+          done < script-urls.txt
+
+      - name: Get Apktool and decompile
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fL --retry 3 https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar -o apktool.jar
+          java -jar apktool.jar d -f app.apk -o decompiled
+
+      - name: Extract agenda implementation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          AGENDA="$(find decompiled -type f -path '*com/angulismotv/fragments/AgendaFragment.smali' | head -1)"
+          test -n "$AGENDA"
+          cp "$AGENDA" AgendaFragment.smali
+          cp decompiled/res/layout/fragment_agenda.xml fragment_agenda.xml
+
+          grep -RniE 'agenda|pages\.dev|fetch\(|axios|eventos|events|json|api' agenda.html web-assets > agenda-web-grep.txt || true
+          grep -niE 'WebView|loadUrl|evaluateJavascript|pages\.dev|agenda|setWebViewClient|onPageFinished|setOnKeyListener' AgendaFragment.smali > agenda-smali-grep.txt || true
+
+          echo "===== AGENDA HTML HEAD =====" > agenda-report.txt
+          sed -n '1,260p' agenda.html >> agenda-report.txt
+          echo "===== SCRIPT URLS =====" >> agenda-report.txt
+          cat script-urls.txt >> agenda-report.txt
+          echo "===== WEB GREP =====" >> agenda-report.txt
+          sed -n '1,500p' agenda-web-grep.txt >> agenda-report.txt
+          echo "===== SMALI GREP =====" >> agenda-report.txt
+          cat agenda-smali-grep.txt >> agenda-report.txt
+          echo "===== AGENDA FRAGMENT =====" >> agenda-report.txt
+          cat AgendaFragment.smali >> agenda-report.txt
+          echo "===== LAYOUT =====" >> agenda-report.txt
+          cat fragment_agenda.xml >> agenda-report.txt
+
+      - name: Upload inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: angulismo-agenda-inspection
+          path: |
+            agenda-report.txt
+            agenda.html
+            web-assets/
+            AgendaFragment.smali
+            fragment_agenda.xml
+          if-no-files-found: error
