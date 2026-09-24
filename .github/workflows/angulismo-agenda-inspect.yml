@@ -1,9 +1,6 @@
 name: Inspect Angulismo Agenda
 
 on:
-  push:
-    branches:
-      - angulismo-audio-fix
   workflow_dispatch:
 
 jobs:
