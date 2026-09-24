@@ -78,6 +78,20 @@ jobs:
           echo "===== LAYOUT =====" >> agenda-report.txt
           cat fragment_agenda.xml >> agenda-report.txt
 
+          echo "===== NAVIGATION / SIDEBAR INVENTORY =====" >> agenda-report.txt
+          find decompiled/res/layout -maxdepth 1 -type f | grep -Ei '(main|nav|drawer|side|menu|home)' | sort >> agenda-report.txt || true
+          find decompiled/res/drawable* -maxdepth 1 -type f 2>/dev/null | grep -Ei '(nav|drawer|side|menu|focus|selected)' | sort >> agenda-report.txt || true
+          echo "===== MANIFEST ACTIVITIES =====" >> agenda-report.txt
+          grep -nE 'activity|MAIN|LEANBACK_LAUNCHER|LAUNCHER' decompiled/AndroidManifest.xml >> agenda-report.txt || true
+          echo "===== SIDEBAR RESOURCE REFERENCES =====" >> agenda-report.txt
+          grep -RniE 'navigation|sidebar|drawer|nav_|menu_|expanded|collapsed|selected|focusable|nextFocus|layout_width|textView' decompiled/res/layout decompiled/res/menu 2>/dev/null | head -1200 >> agenda-report.txt || true
+          echo "===== APP SMALI SIDEBAR REFERENCES =====" >> agenda-report.txt
+          grep -RniE 'DrawerLayout|NavigationView|nav_|sidebar|sideBar|expanded|collapsed|menuItem|requestFocus|setVisibility|setLayoutParams|layoutParams' decompiled/smali/com/angulismotv 2>/dev/null | head -1600 >> agenda-report.txt || true
+
+          mkdir -p nav-files
+          find decompiled/res/layout -maxdepth 1 -type f | grep -Ei '(main|nav|drawer|side|menu|home)' | while read -r x; do cp "$x" nav-files/; done || true
+          find decompiled/smali/com/angulismotv -type f | grep -Ei '(MainActivity|Navigation|Sidebar|Drawer|Menu)' | head -100 | while read -r x; do cp "$x" nav-files/; done || true
+
       - name: Upload inspection
         uses: actions/upload-artifact@v4
         with:
@@ -90,4 +104,5 @@ jobs:
             AgendaFragment*setupWebView*.smali
             AgendaFragment.smali
             fragment_agenda.xml
+            nav-files/
           if-no-files-found: error
