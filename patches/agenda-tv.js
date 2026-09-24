@@ -299,6 +299,14 @@
       toggleEvent(active, false);
       return;
     }
+    if (key === 'Escape' || key === 'Backspace' || e.keyCode === 4) {
+      var expanded = document.querySelector('.tv-event[aria-expanded="true"]');
+      if (expanded) {
+        e.preventDefault();
+        toggleEvent(expanded, false);
+        expanded.focus();
+      }
+    }
   }, true);
 
   function load() {
