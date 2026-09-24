@@ -43,6 +43,49 @@ jobs:
           test -f android-assets/agenda_tv.html.b64
           mkdir -p decompiled/assets
           base64 -d android-assets/agenda_tv.html.b64 > decompiled/assets/agenda_tv.html
+
+          # Keep the embedded page compatible with older Android System WebView
+          # builds and hand DPAD_LEFT back to the native rail when there is no
+          # focusable item further left.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("decompiled/assets/agenda_tv.html")
+          s=p.read_text(encoding="utf-8")
+
+          replacements = {
+              "setTimeout(()=>channelsEl.querySelector('.channel')?.focus(),40)":
+                  "setTimeout(()=>{const x=channelsEl.querySelector('.channel');if(x)x.focus()},40)",
+              "setTimeout(()=>grid.querySelector('.card')?.focus(),20)":
+                  "setTimeout(()=>{const x=grid.querySelector('.card');if(x)x.focus()},20)",
+              "setTimeout(()=>grid.querySelector('.retry')?.focus(),50)":
+                  "setTimeout(()=>{const x=grid.querySelector('.retry');if(x)x.focus()},50)",
+          }
+          for old,new in replacements.items():
+              if old not in s:
+                  raise SystemExit("Expected TV agenda compatibility token missing: "+old)
+              s=s.replace(old,new)
+
+          old_move="if(best){best.focus();best.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'})}}"
+          new_move="if(best){best.focus();best.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'})}else if(dir==='left'){window.location.href='angulismo://focus-menu'}}"
+          if old_move not in s:
+              raise SystemExit("TV agenda DPAD-left fallback insertion point missing")
+          s=s.replace(old_move,new_move,1)
+
+          old_initial="setTimeout(()=>grid.querySelector('.card')?.focus()||document.querySelector('.filter')?.focus(),80)"
+          new_initial="setTimeout(()=>{const c=grid.querySelector('.card'),f=document.querySelector('.filter');if(c)c.focus();else if(f)f.focus()},80)"
+          if old_initial not in s:
+              raise SystemExit("TV agenda initial focus insertion point missing")
+          s=s.replace(old_initial,new_initial,1)
+
+          old_restore="[...grid.querySelectorAll('.card')].find(el=>el.dataset.id===active.dataset.id)?.focus()"
+          new_restore="(()=>{const x=[...grid.querySelectorAll('.card')].find(el=>el.dataset.id===active.dataset.id);if(x)x.focus()})()"
+          if old_restore not in s:
+              raise SystemExit("TV agenda focus restore insertion point missing")
+          s=s.replace(old_restore,new_restore,1)
+
+          p.write_text(s,encoding="utf-8")
+          PY
+
           grep -q 'Agenda deportiva' decompiled/assets/agenda_tv.html
           grep -q 'ArrowLeft' decompiled/assets/agenda_tv.html
           grep -q 'https://raw.githubusercontent.com/tadeoallende/repos-web/refs/heads/main/datos.json' decompiled/assets/agenda_tv.html
@@ -106,6 +149,53 @@ jobs:
           s = s[:start] + method + s[end:]
 
           p.write_text(s)
+
+          # Intercept the private TV-only focus handoff URI and return focus to
+          # the native Agenda item in the application's left navigation rail.
+          client = Path("decompiled/smali/com/angulismotv/fragments/AgendaFragment$setupWebView$2.smali")
+          cs = client.read_text()
+          needle = '''    .line 143
+              :cond_0
+              iget-object v1, p0, Lcom/angulismotv/fragments/AgendaFragment$setupWebView$2;->this$0:Lcom/angulismotv/fragments/AgendaFragment;
+          '''
+          insert = '''    .line 143
+              :cond_0
+              const-string v1, "angulismo://focus-menu"
+
+              invoke-virtual {p2, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+
+              move-result v1
+
+              if-eqz v1, :tv_menu_continue
+
+              iget-object v1, p0, Lcom/angulismotv/fragments/AgendaFragment$setupWebView$2;->this$0:Lcom/angulismotv/fragments/AgendaFragment;
+
+              invoke-virtual {v1}, Lcom/angulismotv/fragments/AgendaFragment;->getActivity()Landroidx/fragment/app/FragmentActivity;
+
+              move-result-object v1
+
+              if-eqz v1, :tv_menu_return
+
+              sget v2, Lcom/angulismotv/R$id;->menu_agenda:I
+
+              invoke-virtual {v1, v2}, Landroid/app/Activity;->findViewById(I)Landroid/view/View;
+
+              move-result-object v1
+
+              if-eqz v1, :tv_menu_return
+
+              invoke-virtual {v1}, Landroid/view/View;->requestFocus()Z
+
+              :tv_menu_return
+              return v0
+
+              :tv_menu_continue
+              iget-object v1, p0, Lcom/angulismotv/fragments/AgendaFragment$setupWebView$2;->this$0:Lcom/angulismotv/fragments/AgendaFragment;
+          '''
+          if needle not in cs:
+              raise SystemExit("Agenda WebViewClient focus-menu insertion point not found")
+          cs=cs.replace(needle,insert,1)
+          client.write_text(cs)
           PY
 
           FILE="decompiled/smali/com/angulismotv/fragments/AgendaFragment.smali"
@@ -113,6 +203,12 @@ jobs:
           grep -n -A8 -B4 'setAllowUniversalAccessFromFileURLs' "$FILE"
           grep -n -A4 -B4 'angulismotv.pages.dev' "$FILE"
           grep -q 'requestFocus()Z' "$FILE"
+          grep -q 'angulismo://focus-menu' 'decompiled/smali/com/angulismotv/fragments/AgendaFragment$setupWebView$2.smali'
+          grep -q 'angulismo://focus-menu' decompiled/assets/agenda_tv.html
+          if grep -q 'setSideMenuLabelsVisible' decompiled/smali/com/angulismotv/MainActivity.smali; then
+            echo "Unexpected sidebar patch detected" >&2
+            exit 1
+          fi
 
       - name: Patch ExoPlayer audio renderer
         shell: bash
@@ -175,16 +271,6 @@ jobs:
           # Keep this local build ahead of the official beta so its updater does not try to replace it.
           sed -i -E "s/versionCode: '[0-9]+'/versionCode: '105'/" decompiled/apktool.yml
           sed -i -E "s/versionName: .*/versionName: 1.4-tvagenda-audiofix/" decompiled/apktool.yml
-          grep -A4 -B2 versionInfo decompiled/apktool.yml || true
-
-      - name: Patch TV agenda and sidebar navigation
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python3 patches/patch_tv.py decompiled patches/agenda-tv.js
-          grep -q '__ANGULISMO_TV_AGENDA__' 'decompiled/smali/com/angulismotv/fragments/AgendaFragment$setupWebView$2.smali'
-          grep -q 'angulismo://focus-menu' 'decompiled/smali/com/angulismotv/fragments/AgendaFragment$setupWebView$2.smali'
-          grep -q 'setSideMenuLabelsVisible' decompiled/smali/com/angulismotv/MainActivity.smali
           grep -A4 -B2 versionInfo decompiled/apktool.yml || true
 
       - name: Download ExoPlayer FFmpeg 2.19.1 extension
