@@ -58,7 +58,7 @@ jobs:
           test -n "$AGENDA"
           cp "$AGENDA" AgendaFragment.smali
           cp decompiled/res/layout/fragment_agenda.xml fragment_agenda.xml
-          for f in decompiled/smali/com/angulismotv/fragments/AgendaFragment\\$setupWebView\\$*.smali; do [ -f "$f" ] && cp "$f" .; done
+          find decompiled/smali/com/angulismotv/fragments -maxdepth 1 -type f -name "AgendaFragment*setupWebView*.smali" -exec cp {} . \\;
 
           grep -RniE 'agenda|pages\.dev|fetch\(|axios|eventos|events|json|api' agenda.html web-assets > agenda-web-grep.txt || true
           grep -niE 'WebView|loadUrl|evaluateJavascript|pages\.dev|agenda|setWebViewClient|onPageFinished|setOnKeyListener' AgendaFragment.smali > agenda-smali-grep.txt || true
@@ -87,7 +87,7 @@ jobs:
             agenda.html
             app-agenda.html
             web-assets/
-            AgendaFragment\$setupWebView\$*.smali
+            AgendaFragment*setupWebView*.smali
             AgendaFragment.smali
             fragment_agenda.xml
           if-no-files-found: error
