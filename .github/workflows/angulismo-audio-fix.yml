@@ -1,9 +1,9 @@
-name: Build Angulismo TV Audio Fix
+name: Build Angulismo TV Agenda Fix
 
 on:
   push:
     branches:
-      - angulismo-audio-fix
+      - angulismo-tv-agenda
   workflow_dispatch:
 
 jobs:
@@ -35,6 +35,16 @@ jobs:
       - name: Decompile APK
         run: |
           java -jar apktool.jar d -f app.apk -o decompiled
+
+      - name: Patch TV agenda for D-pad navigation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 patches/patch_agenda_only.py decompiled patches/agenda-tv.js
+          grep -q '__ANGULISMO_TV_AGENDA__' 'decompiled/smali/com/angulismotv/fragments/AgendaFragment$setupWebView$2.smali'
+          grep -q 'angulismo://focus-menu' 'decompiled/smali/com/angulismotv/fragments/AgendaFragment$setupWebView$2.smali'
+          grep -q 'angulismotv.pages.dev' decompiled/smali/com/angulismotv/fragments/AgendaFragment.smali
+          grep -q 'requestFocus()Z' decompiled/smali/com/angulismotv/fragments/AgendaFragment.smali
 
       - name: Patch ExoPlayer audio renderer
         shell: bash
@@ -95,8 +105,8 @@ jobs:
           grep -q 'setExtensionRendererMode' "$FILE"
           grep -q '<init>(Landroid/content/Context;Lcom/google/android/exoplayer2/RenderersFactory;)V' "$FILE"
           # Keep this local build ahead of the official beta so its updater does not try to replace it.
-          sed -i -E "s/versionCode: '[0-9]+'/versionCode: '104'/" decompiled/apktool.yml
-          sed -i -E "s/versionName: .*/versionName: 1.3-audiofix/" decompiled/apktool.yml
+          sed -i -E "s/versionCode: '[0-9]+'/versionCode: '105'/" decompiled/apktool.yml
+          sed -i -E "s/versionName: .*/versionName: 1.4-tvagenda-audiofix/" decompiled/apktool.yml
           grep -A4 -B2 versionInfo decompiled/apktool.yml || true
 
       - name: Download ExoPlayer FFmpeg 2.19.1 extension
@@ -162,17 +172,17 @@ jobs:
             --ks audiofix.keystore \
             --ks-pass pass:AngulismoAudioFix \
             --key-pass pass:AngulismoAudioFix \
-            --out AngulismoTV-BETA-AudioFix.apk aligned.apk
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs AngulismoTV-BETA-AudioFix.apk
-          unzip -t AngulismoTV-BETA-AudioFix.apk >/dev/null
-          sha256sum AngulismoTV-BETA-AudioFix.apk | tee AudioFix-SHA256.txt
-          ls -lh AngulismoTV-BETA-AudioFix.apk
+            --out AngulismoTV-BETA-TVAgenda-AudioFix.apk aligned.apk
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs AngulismoTV-BETA-TVAgenda-AudioFix.apk
+          unzip -t AngulismoTV-BETA-TVAgenda-AudioFix.apk >/dev/null
+          sha256sum AngulismoTV-BETA-TVAgenda-AudioFix.apk | tee TVAgenda-AudioFix-SHA256.txt
+          ls -lh AngulismoTV-BETA-TVAgenda-AudioFix.apk
 
       - name: Upload patched APK
         uses: actions/upload-artifact@v4
         with:
-          name: AngulismoTV-BETA-AudioFix
+          name: AngulismoTV-BETA-TVAgenda-AudioFix
           path: |
-            AngulismoTV-BETA-AudioFix.apk
-            AudioFix-SHA256.txt
+            AngulismoTV-BETA-TVAgenda-AudioFix.apk
+            TVAgenda-AudioFix-SHA256.txt
           if-no-files-found: error
