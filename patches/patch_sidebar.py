@@ -75,12 +75,163 @@ helper = r'''
 
 '''
 
+dpad_helper = r'''
+.method private final handleSideMenuKey(I)Z
+    .locals 5
+
+    invoke-direct {p0}, Lcom/angulismotv/MainActivity;->anySideMenuItemFocused()Z
+
+    move-result v0
+
+    if-nez v0, :tv_menu_has_focus
+
+    const/4 v0, 0x0
+
+    return v0
+
+    :tv_menu_has_focus
+    invoke-virtual {p0}, Lcom/angulismotv/MainActivity;->getCurrentFocus()Landroid/view/View;
+
+    move-result-object v0
+
+    if-eqz v0, :tv_menu_not_handled
+
+    invoke-virtual {v0}, Landroid/view/View;->getId()I
+
+    move-result v1
+
+    const/16 v2, 0x13
+
+    if-ne p1, v2, :tv_menu_check_down
+
+    sget v2, Lcom/angulismotv/R$id;->menu_agenda:I
+
+    if-ne v1, v2, :tv_menu_up_from_multicam
+
+    sget v3, Lcom/angulismotv/R$id;->menu_channels:I
+
+    goto :tv_menu_request
+
+    :tv_menu_up_from_multicam
+    sget v2, Lcom/angulismotv/R$id;->menu_multicam:I
+
+    if-ne v1, v2, :tv_menu_up_from_forum
+
+    sget v3, Lcom/angulismotv/R$id;->menu_agenda:I
+
+    goto :tv_menu_request
+
+    :tv_menu_up_from_forum
+    sget v2, Lcom/angulismotv/R$id;->menu_forum:I
+
+    if-ne v1, v2, :tv_menu_consume
+
+    sget v3, Lcom/angulismotv/R$id;->menu_multicam:I
+
+    goto :tv_menu_request
+
+    :tv_menu_check_down
+    const/16 v2, 0x14
+
+    if-ne p1, v2, :tv_menu_check_left
+
+    sget v2, Lcom/angulismotv/R$id;->menu_channels:I
+
+    if-ne v1, v2, :tv_menu_down_from_agenda
+
+    sget v3, Lcom/angulismotv/R$id;->menu_agenda:I
+
+    goto :tv_menu_request
+
+    :tv_menu_down_from_agenda
+    sget v2, Lcom/angulismotv/R$id;->menu_agenda:I
+
+    if-ne v1, v2, :tv_menu_down_from_multicam
+
+    sget v3, Lcom/angulismotv/R$id;->menu_multicam:I
+
+    goto :tv_menu_request
+
+    :tv_menu_down_from_multicam
+    sget v2, Lcom/angulismotv/R$id;->menu_multicam:I
+
+    if-ne v1, v2, :tv_menu_consume
+
+    sget v3, Lcom/angulismotv/R$id;->menu_forum:I
+
+    goto :tv_menu_request
+
+    :tv_menu_check_left
+    const/16 v2, 0x15
+
+    if-ne p1, v2, :tv_menu_check_right
+
+    goto :tv_menu_consume
+
+    :tv_menu_check_right
+    const/16 v2, 0x16
+
+    if-ne p1, v2, :tv_menu_check_center
+
+    const/4 v2, 0x1
+
+    invoke-direct {p0, v2}, Lcom/angulismotv/MainActivity;->collapseSideMenu(Z)V
+
+    const/4 v0, 0x0
+
+    return v0
+
+    :tv_menu_check_center
+    const/16 v2, 0x17
+
+    if-ne p1, v2, :tv_menu_check_enter
+
+    invoke-virtual {v0}, Landroid/view/View;->performClick()Z
+
+    goto :tv_menu_consume
+
+    :tv_menu_check_enter
+    const/16 v2, 0x42
+
+    if-ne p1, v2, :tv_menu_not_handled
+
+    invoke-virtual {v0}, Landroid/view/View;->performClick()Z
+
+    goto :tv_menu_consume
+
+    :tv_menu_request
+    invoke-virtual {p0, v3}, Lcom/angulismotv/MainActivity;->findViewById(I)Landroid/view/View;
+
+    move-result-object v4
+
+    if-eqz v4, :tv_menu_consume
+
+    invoke-virtual {v4}, Landroid/view/View;->requestFocus()Z
+
+    :tv_menu_consume
+    const/4 v0, 0x1
+
+    return v0
+
+    :tv_menu_not_handled
+    const/4 v0, 0x0
+
+    return v0
+.end method
+
+'''
+
+if "handleSideMenuKey(I)Z" not in s:
+    main_marker = "setup_marker = \".method private final setupSideMenuItem(Landroid/widget/LinearLayout;Landroid/widget/TextView;I)V\"\n"
+    if main_marker not in s:
+        raise SystemExit("setup marker declaration not found")
+    s = s.replace(main_marker, dpad_helper + main_marker, 1)
 setup_marker = ".method private final setupSideMenuItem(Landroid/widget/LinearLayout;Landroid/widget/TextView;I)V"
 if "setSideMenuLabelsVisible(Z)V" in s:
     raise SystemExit("sidebar patch already present; refusing double patch")
 if setup_marker not in s:
     raise SystemExit("setupSideMenuItem marker not found")
-s = s.replace(setup_marker, helper + setup_marker, 1)
+s = s.replace(setup_marker, helper + dpad_helper + setup_marker, 1)
 
 collapse_head = """.method private final collapseSideMenu(Z)V
     .locals 4
@@ -117,26 +268,13 @@ pattern = re.compile(
     re.S,
 )
 replacement = r'''.method private static final setupSideMenuItem$lambda$6(Lcom/angulismotv/MainActivity;Landroid/widget/TextView;Landroid/view/View;Z)V
-    .locals 1
+    .locals 0
 
     if-eqz p3, :tv_focus_lost
 
     invoke-direct {p0}, Lcom/angulismotv/MainActivity;->expandSideMenu()V
 
-    return-void
-
     :tv_focus_lost
-    invoke-direct {p0}, Lcom/angulismotv/MainActivity;->anySideMenuItemFocused()Z
-
-    move-result v0
-
-    if-nez v0, :tv_focus_done
-
-    const/4 v0, 0x1
-
-    invoke-direct {p0, v0}, Lcom/angulismotv/MainActivity;->collapseSideMenu(Z)V
-
-    :tv_focus_done
     return-void
 .end method'''
 s, count = pattern.subn(replacement, s, count=1)
@@ -150,9 +288,45 @@ for token in (
     "menu_multicam_text",
     "menu_forum_text",
     ":tv_focus_lost",
+    "handleSideMenuKey(I)Z",
+    ":tv_menu_request",
+    ":tv_dispatch_super",
 ):
     if token not in s:
         raise SystemExit(f"verification failed: missing {token}")
+
+dispatch_old = r'''.line 212
+    :cond_2
+    invoke-super {p0, p1}, Landroidx/appcompat/app/AppCompatActivity;->dispatchKeyEvent(Landroid/view/KeyEvent;)Z
+
+    move-result p1
+
+    return p1
+.end method'''
+
+dispatch_new = r'''.line 212
+    :cond_2
+    invoke-direct {p0, v0}, Lcom/angulismotv/MainActivity;->handleSideMenuKey(I)Z
+
+    move-result v1
+
+    if-eqz v1, :tv_dispatch_super
+
+    const/4 p1, 0x1
+
+    return p1
+
+    :tv_dispatch_super
+    invoke-super {p0, p1}, Landroidx/appcompat/app/AppCompatActivity;->dispatchKeyEvent(Landroid/view/KeyEvent;)Z
+
+    move-result p1
+
+    return p1
+.end method'''
+
+if dispatch_old not in s:
+    raise SystemExit("dispatchKeyEvent patch point not found")
+s = s.replace(dispatch_old, dispatch_new, 1)
 
 main.write_text(s, encoding="utf-8")
 print("Sidebar TV focus/label patch applied")
