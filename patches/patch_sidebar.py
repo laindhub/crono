@@ -126,10 +126,15 @@ dpad_helper = r'''
     if-ne p1, v2, :tv_menu_check_right
     goto :tv_menu_consume
 
-    # DPAD_RIGHT: let Android transfer focus to the content, but collapse rail.
+    # DPAD_RIGHT: restore the active section highlight, collapse the rail,
+    # then let Android transfer focus to the content.
     :tv_menu_check_right
     const/16 v2, 0x16
     if-ne p1, v2, :tv_menu_check_center
+
+    iget v2, p0, Lcom/angulismotv/MainActivity;->currentNavId:I
+    invoke-direct {p0, v2}, Lcom/angulismotv/MainActivity;->updateSideMenuSelection(I)V
+
     const/4 v2, 0x1
     invoke-direct {p0, v2}, Lcom/angulismotv/MainActivity;->collapseSideMenu(Z)V
     const/4 v0, 0x0
@@ -205,10 +210,21 @@ focus_pattern = re.compile(
     re.S,
 )
 focus_replacement = r'''.method private static final setupSideMenuItem$lambda$6(Lcom/angulismotv/MainActivity;Landroid/widget/TextView;Landroid/view/View;Z)V
-    .locals 0
+    .locals 2
 
     if-eqz p3, :tv_focus_lost
+
     invoke-direct {p0}, Lcom/angulismotv/MainActivity;->expandSideMenu()V
+
+    # While the rail owns focus, visual selection follows the focused item
+    # instead of the currently open section.
+    const/4 v0, 0x0
+
+    invoke-direct {p0, v0}, Lcom/angulismotv/MainActivity;->updateSideMenuSelection(I)V
+
+    sget v1, Lcom/angulismotv/R$drawable;->side_menu_item_bg:I
+
+    invoke-virtual {p2, v1}, Landroid/view/View;->setBackgroundResource(I)V
 
     :tv_focus_lost
     return-void
@@ -254,6 +270,8 @@ for token in (
     ":tv_menu_check_center",
     ":tv_dispatch_super",
     ":tv_focus_lost",
+    "side_menu_item_bg",
+    "updateSideMenuSelection(I)V",
     "menu_channels_text",
     "menu_agenda_text",
     "menu_multicam_text",
