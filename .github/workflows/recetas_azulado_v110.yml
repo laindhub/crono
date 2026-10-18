@@ -1,0 +1,47 @@
+name: Recetas Azulado 1.1.0 Android APK
+on:
+  push:
+    branches:
+      - 'build/recetas-azulado-v110-20261018'
+    paths:
+      - '.github/workflows/recetas_azulado_v110.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          yes | "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Expand and verify project
+        run: |
+          mkdir -p azulado-project
+          cat recetas_azulado_v110/chunk{0,1,2,3,4}.txt | base64 -d > /tmp/recetas-azulado-1.1.0.zip
+          unzip -q /tmp/recetas-azulado-1.1.0.zip -d azulado-project
+          test -s azulado-project/app/src/main/java/com/azulado/recetas/GroqRecipeScanner.java
+          test -s azulado-project/app/src/main/assets/brand-logo.png
+      - name: Assemble debug APK
+        working-directory: azulado-project
+        run: gradle --no-daemon assembleDebug
+      - name: Verify APK
+        run: |
+          test -s azulado-project/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum azulado-project/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RecetasAzulado-1.1.0-APK
+          path: azulado-project/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
