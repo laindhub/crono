@@ -33,6 +33,7 @@ jobs:
           unzip -q /tmp/recetas-azulado-1.1.0.zip -d azulado-project
           test -s azulado-project/app/src/main/java/com/azulado/recetas/GroqRecipeScanner.java
           test -s azulado-project/app/src/main/assets/brand-logo.png
+          cp recetas_azulado_v110/app.js azulado-project/app/src/main/assets/app.js
       - name: Assemble debug APK
         working-directory: azulado-project
         run: gradle --no-daemon assembleDebug
