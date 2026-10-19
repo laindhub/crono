@@ -1,0 +1,52 @@
+name: Build Recetas Azulado 1.1.1
+on:
+  push:
+    branches:
+      - 'build/recetas-azulado-v111-20261018'
+    paths:
+      - '.github/workflows/recetas_azulado_v111.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+          yes | "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Prepare project with v1.1.1 corrections
+        run: |
+          mkdir -p azulado-project
+          cat recetas_azulado_v110/chunk{0,1,2,3,4}.txt | base64 -d > /tmp/azulado-source.zip
+          unzip -q /tmp/azulado-source.zip -d azulado-project
+          cp recetas_azulado_v111/app.js azulado-project/app/src/main/assets/app.js
+          cp recetas_azulado_v111/styles.css azulado-project/app/src/main/assets/styles.css
+          cp recetas_azulado_v111/GroqRecipeScanner.java azulado-project/app/src/main/java/com/azulado/recetas/GroqRecipeScanner.java
+          cp recetas_azulado_v111/MainActivity.java azulado-project/app/src/main/java/com/azulado/recetas/MainActivity.java
+          cp recetas_azulado_v111/build.gradle azulado-project/app/build.gradle
+          grep -q 'versionName .1.1.1.' azulado-project/app/build.gradle
+      - name: Compile APK
+        working-directory: azulado-project
+        run: gradle --no-daemon assembleDebug
+      - name: Verify output
+        run: |
+          test -s azulado-project/app/build/outputs/apk/debug/app-debug.apk
+          sha256sum azulado-project/app/build/outputs/apk/debug/app-debug.apk
+      - name: Package APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RecetasAzulado-1.1.1
+          path: azulado-project/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
