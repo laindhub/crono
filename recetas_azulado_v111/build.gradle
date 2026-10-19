@@ -1,0 +1,25 @@
+plugins {
+    id 'com.android.application'
+}
+android {
+    namespace 'com.azulado.recetas'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.azulado.recetas'
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName '1.1.1'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+}
